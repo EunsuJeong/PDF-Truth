@@ -156,7 +156,7 @@ class ViewerViewModel(
         _uiState.value = state.copy(isSearching = true, searchNotice = null)
         viewModelScope.launch(dispatcherProvider.io) {
             try {
-                val results = pdfSearchRepository.search(
+                val outcome = pdfSearchRepository.search(
                     documentUri = uri,
                     query = query,
                     pageCount = state.pageCount,
@@ -164,18 +164,40 @@ class ViewerViewModel(
 
                 val current = _uiState.value
                 if (current is ViewerUiState.Success) {
-                    val notice = if (results.isEmpty()) {
-                        "No results. PdfRenderer cannot extract text; search engine is scaffold-only for now."
-                    } else {
-                        null
+                    when (outcome) {
+                        is com.pdftruth.domain.model.PdfSearchOutcome.Success -> {
+                            val results = outcome.results
+                            val notice = if (results.isEmpty()) "No results found." else null
+                            _uiState.value = current.copy(
+                                isSearching = false,
+                                searchNotice = notice,
+                                searchResults = results.map {
+                                    SearchResultUi(pageIndex = it.pageIndex, summary = it.summary)
+                                },
+                            )
+                        }
+                        is com.pdftruth.domain.model.PdfSearchOutcome.Empty -> {
+                            _uiState.value = current.copy(
+                                isSearching = false,
+                                searchNotice = "No results found.",
+                                searchResults = emptyList(),
+                            )
+                        }
+                        is com.pdftruth.domain.model.PdfSearchOutcome.Unsupported -> {
+                            _uiState.value = current.copy(
+                                isSearching = false,
+                                searchNotice = outcome.message,
+                                searchResults = emptyList(),
+                            )
+                        }
+                        is com.pdftruth.domain.model.PdfSearchOutcome.Failure -> {
+                            _uiState.value = current.copy(
+                                isSearching = false,
+                                searchNotice = "Search failed: ${outcome.message}",
+                                searchResults = emptyList(),
+                            )
+                        }
                     }
-                    _uiState.value = current.copy(
-                        isSearching = false,
-                        searchNotice = notice,
-                        searchResults = results.map {
-                            SearchResultUi(pageIndex = it.pageIndex, summary = it.summary)
-                        },
-                    )
                 }
             } catch (e: Exception) {
                 val current = _uiState.value
