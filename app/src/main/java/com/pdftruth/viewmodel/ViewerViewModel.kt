@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pdftruth.domain.model.PdfSearchOutcome
 import com.pdftruth.domain.model.ReadingProgress
 import com.pdftruth.domain.model.RecentDocument
 import com.pdftruth.domain.repository.BookmarkRepository
@@ -156,7 +157,7 @@ class ViewerViewModel(
         _uiState.value = state.copy(isSearching = true, searchNotice = null)
         viewModelScope.launch(dispatcherProvider.io) {
             try {
-                val results = pdfSearchRepository.search(
+                val outcome = pdfSearchRepository.search(
                     documentUri = uri,
                     query = query,
                     pageCount = state.pageCount,
@@ -164,18 +165,41 @@ class ViewerViewModel(
 
                 val current = _uiState.value
                 if (current is ViewerUiState.Success) {
-                    val notice = if (results.isEmpty()) {
-                        "No results. PdfRenderer cannot extract text; search engine is scaffold-only for now."
-                    } else {
-                        null
+                    when (outcome) {
+                        is PdfSearchOutcome.Success -> {
+                            _uiState.value = current.copy(
+                                isSearching = false,
+                                searchNotice = null,
+                                searchResults = outcome.results.map {
+                                    SearchResultUi(pageIndex = it.pageIndex, summary = it.summary)
+                                },
+                            )
+                        }
+
+                        is PdfSearchOutcome.Empty -> {
+                            _uiState.value = current.copy(
+                                isSearching = false,
+                                searchNotice = "No search results found.",
+                                searchResults = emptyList(),
+                            )
+                        }
+
+                        is PdfSearchOutcome.Unsupported -> {
+                            _uiState.value = current.copy(
+                                isSearching = false,
+                                searchNotice = outcome.message,
+                                searchResults = emptyList(),
+                            )
+                        }
+
+                        is PdfSearchOutcome.Failure -> {
+                            _uiState.value = current.copy(
+                                isSearching = false,
+                                searchNotice = "Search failed: ${outcome.message}",
+                                searchResults = emptyList(),
+                            )
+                        }
                     }
-                    _uiState.value = current.copy(
-                        isSearching = false,
-                        searchNotice = notice,
-                        searchResults = results.map {
-                            SearchResultUi(pageIndex = it.pageIndex, summary = it.summary)
-                        },
-                    )
                 }
             } catch (e: Exception) {
                 val current = _uiState.value
