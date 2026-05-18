@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.pdftruth.viewmodel.ViewerUiState
+import com.pdftruth.viewmodel.PageUiState
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -21,7 +22,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.*
 import androidx.compose.ui.draw.scale
 import com.pdftruth.ui.gesture.pinchToZoom
@@ -30,6 +30,8 @@ import com.pdftruth.ui.gesture.pinchToZoom
 fun ViewerScreen(
     uiState: ViewerUiState,
     onNavigateUp: () -> Unit,
+    onCurrentPageChanged: (Int) -> Unit,
+    onToggleBookmark: () -> Unit,
     pdfUri: Uri? = null,
 ) {
     Scaffold { innerPadding ->
@@ -58,6 +60,7 @@ fun ViewerScreen(
                     val pageCount = uiState.pageCount
                     val pages = uiState.pages
                     val currentPage = uiState.currentPage
+                    val isCurrentBookmarked = uiState.bookmarkedPages.contains(currentPage)
                     val coroutineScope = rememberCoroutineScope()
                     // 확대/축소 상태 (전체/페이지별 확장 가능)
                     var scale by remember { mutableStateOf(1f) }
@@ -66,7 +69,7 @@ fun ViewerScreen(
                     // LazyListState와 ViewModel currentPage 동기화
                     LaunchedEffect(listState.firstVisibleItemIndex) {
                         if (listState.firstVisibleItemIndex != currentPage) {
-                            onCurrentPageChanged?.invoke(listState.firstVisibleItemIndex)
+                            onCurrentPageChanged(listState.firstVisibleItemIndex)
                         }
                     }
                     Column(
@@ -91,8 +94,10 @@ fun ViewerScreen(
                                 enabled = currentPage > 0
                             ) { Text("이전") }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(uiState.fileName ?: "Unknown file", style = MaterialTheme.typography.labelLarge)
                                 Text("페이지 ${currentPage + 1} / $pageCount", style = MaterialTheme.typography.bodyMedium)
                                 Text("확대: ${(scale * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
+                                Text(uiState.documentUri ?: "", style = MaterialTheme.typography.labelSmall)
                             }
                             Button(
                                 onClick = {
@@ -103,6 +108,17 @@ fun ViewerScreen(
                                 },
                                 enabled = currentPage < pageCount - 1
                             ) { Text("다음") }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            Button(onClick = onToggleBookmark) {
+                                Text(if (isCurrentBookmarked) "북마크 삭제" else "북마크 추가")
+                            }
                         }
                         LazyColumn(
                             state = listState,

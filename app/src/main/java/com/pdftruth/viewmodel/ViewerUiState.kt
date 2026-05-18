@@ -9,7 +9,9 @@ sealed class ViewerUiState {
         val pageCount: Int,
         val pages: List<PageUiState>,
         val fileName: String? = null,
+        val documentUri: String? = null,
         val currentPage: Int = 0,
+        val bookmarkedPages: Set<Int> = emptySet(),
     ) : ViewerUiState()
     data class Error(val message: String) : ViewerUiState()
 }
