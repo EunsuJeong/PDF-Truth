@@ -7,7 +7,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import android.net.Uri
-import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
 import com.pdftruth.viewer.PdfDocumentSource
@@ -15,45 +14,62 @@ import com.pdftruth.viewer.PageRenderRequest
 import com.pdftruth.viewer.engine.AndroidPdfRendererEngine
 import com.pdftruth.util.DefaultDispatcherProvider
 
-// 실제 프로젝트에서는 DI 또는 Application context 주입 필요
-// 아래 예시는 context를 안전하게 주입하는 구조로 교체 필요
 class ViewerViewModel : ViewModel() {
     private val dispatcherProvider = DefaultDispatcherProvider
-    // TODO: context 주입 구조로 교체 필요
-    private val pdfEngine: AndroidPdfRendererEngine? = null
     private val _uiState = MutableStateFlow<ViewerUiState>(ViewerUiState.Idle)
     val uiState: StateFlow<ViewerUiState> = _uiState.asStateFlow()
 
     private var currentSession: com.pdftruth.viewer.PdfDocumentSession? = null
+    private var engine: AndroidPdfRendererEngine? = null
+    private var pageStates: MutableList<PageUiState> = mutableListOf()
 
     fun openPdf(uri: Uri?) {
         if (uri == null) {
             _uiState.value = ViewerUiState.Error("PDF 파일이 선택되지 않았습니다.")
             return
         }
-        // 실제 환경에서는 context 주입 필요
         val context = getApplicationContextSafely()
-        val engine = AndroidPdfRendererEngine(context)
+        engine = AndroidPdfRendererEngine(context)
         _uiState.value = ViewerUiState.Loading
         viewModelScope.launch(dispatcherProvider.io) {
             try {
                 val source = PdfDocumentSource(uri.toString())
-                val session = engine.openDocument(source)
+                val session = engine!!.openDocument(source)
                 currentSession = session
                 val pageCount = session.pageCount
-                val pageBitmapResult = engine.renderPage(
-                    session,
-                    PageRenderRequest(pageIndex = 0, width = 1080, height = 1440)
+                pageStates = MutableList(pageCount) { PageUiState.Loading }
+                // 최초 상태 전달
+                _uiState.value = ViewerUiState.Success(
+                    pageCount = pageCount,
+                    pages = pageStates.toList(),
+                    fileName = null,
+                    currentPage = 0
                 )
-                val bitmap = pageBitmapResult.bitmap
-                if (bitmap != null) {
-                    _uiState.value = ViewerUiState.Success(
-                        bitmap = bitmap,
-                        pageCount = pageCount,
-                        fileName = null // 추후 파일명 추출
-                    )
-                } else {
-                    _uiState.value = ViewerUiState.Error("PDF 페이지 렌더링 실패")
+                // 각 페이지 비동기 렌더링
+                for (i in 0 until pageCount) {
+                    launch(dispatcherProvider.io) {
+                        try {
+                            val pageBitmapResult = engine!!.renderPage(
+                                session,
+                                PageRenderRequest(pageIndex = i, width = 1080, height = 1440)
+                            )
+                            val bitmap = pageBitmapResult.bitmap
+                            if (bitmap != null) {
+                                pageStates[i] = PageUiState.BitmapReady(bitmap)
+                            } else {
+                                pageStates[i] = PageUiState.Error("페이지 렌더링 실패")
+                            }
+                        } catch (e: Exception) {
+                            pageStates[i] = PageUiState.Error("페이지 렌더링 실패: ${e.localizedMessage}")
+                        }
+                        // 상태 갱신
+                        _uiState.value = ViewerUiState.Success(
+                            pageCount = pageCount,
+                            pages = pageStates.toList(),
+                            fileName = null,
+                            currentPage = 0
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.value = ViewerUiState.Error("PDF 열기 실패: ${e.localizedMessage}")
@@ -66,7 +82,7 @@ class ViewerViewModel : ViewModel() {
         viewModelScope.launch(dispatcherProvider.io) {
             currentSession?.let {
                 try {
-                    pdfEngine.closeDocument(it)
+                    engine?.closeDocument(it)
                 } catch (_: Exception) {}
             }
         }
@@ -74,7 +90,5 @@ class ViewerViewModel : ViewModel() {
 }
 
 private fun getApplicationContextSafely(): Context {
-    // 실제 프로젝트에서는 DI 또는 Application context 주입 필요
-    // 임시: ApplicationProvider.getApplicationContext() 등으로 대체 가능
     throw NotImplementedError("Application context를 안전하게 주입해야 합니다.")
 }

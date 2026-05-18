@@ -15,11 +15,14 @@ import androidx.compose.ui.unit.dp
 import com.pdftruth.viewmodel.ViewerUiState
 import android.net.Uri
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.*
 
 @Composable
 fun ViewerScreen(
@@ -35,7 +38,6 @@ fun ViewerScreen(
         ) {
             when (uiState) {
                 is ViewerUiState.Idle -> {
-                    // 안내 메시지
                     Column(
                         modifier = Modifier.align(Alignment.Center),
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -50,18 +52,53 @@ fun ViewerScreen(
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 }
                 is ViewerUiState.Success -> {
+                    val listState = rememberLazyListState()
+                    val pageCount = uiState.pageCount
+                    val pages = uiState.pages
+                    // 현재 보이는 페이지 index 추적 (준비)
+                    val visiblePage by remember {
+                        derivedStateOf {
+                            listState.firstVisibleItemIndex
+                        }
+                    }
                     Column(
-                        modifier = Modifier.align(Alignment.Center),
+                        modifier = Modifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("페이지 1 / ${uiState.pageCount}", style = MaterialTheme.typography.bodyMedium)
-                        Image(
-                            bitmap = uiState.bitmap.asImageBitmap(),
-                            contentDescription = "PDF 첫 페이지",
-                            modifier = Modifier
-                                .size(320.dp, 440.dp)
-                                .padding(top = 16.dp)
-                        )
+                        Text("페이지 ${visiblePage + 1} / $pageCount", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentPadding = PaddingValues(vertical = 16.dp, horizontal = 0.dp)
+                        ) {
+                            itemsIndexed(pages) { idx, pageState ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    when (pageState) {
+                                        is PageUiState.Loading -> {
+                                            CircularProgressIndicator()
+                                        }
+                                        is PageUiState.BitmapReady -> {
+                                            Image(
+                                                bitmap = pageState.bitmap.asImageBitmap(),
+                                                contentDescription = "PDF 페이지 ${idx + 1}",
+                                                modifier = Modifier
+                                                    .fillMaxWidth(0.9f)
+                                                    .aspectRatio(0.707f) // A4 비율
+                                            )
+                                        }
+                                        is PageUiState.Error -> {
+                                            Text("페이지 ${idx + 1} 오류: ${pageState.message}", color = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         Button(onClick = onNavigateUp, modifier = Modifier.padding(top = 16.dp)) {
                             Text("Back")
                         }
