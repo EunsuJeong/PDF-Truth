@@ -5,16 +5,19 @@ import androidx.room.Room
 import com.pdftruth.data.local.AndroidPdfFileDataSource
 import com.pdftruth.data.repository.BookmarkRepositoryImpl
 import com.pdftruth.data.repository.DocumentRepositoryImpl
+import com.pdftruth.data.repository.PdfSearchRepositoryImpl
 import com.pdftruth.data.repository.ReaderPreferencesRepositoryImpl
 import com.pdftruth.data.repository.ReadingProgressRepositoryImpl
 import com.pdftruth.data.repository.RecentDocumentRepositoryImpl
 import com.pdftruth.database.PdfTruthDatabase
 import com.pdftruth.domain.repository.BookmarkRepository
 import com.pdftruth.domain.repository.DocumentRepository
+import com.pdftruth.domain.repository.PdfSearchRepository
 import com.pdftruth.domain.repository.ReaderPreferencesRepository
 import com.pdftruth.domain.repository.ReadingProgressRepository
 import com.pdftruth.domain.repository.RecentDocumentRepository
 import com.pdftruth.storage.ReaderPreferencesStorage
+import com.pdftruth.viewer.search.AndroidPdfRendererSearchEngine
 
 class AppContainer private constructor(context: Context) {
 
@@ -48,6 +51,10 @@ class AppContainer private constructor(context: Context) {
 
     val bookmarkRepository: BookmarkRepository by lazy {
         BookmarkRepositoryImpl(database.bookmarkDao())
+    }
+
+    val pdfSearchRepository: PdfSearchRepository by lazy {
+        PdfSearchRepositoryImpl(AndroidPdfRendererSearchEngine())
     }
 
     companion object {

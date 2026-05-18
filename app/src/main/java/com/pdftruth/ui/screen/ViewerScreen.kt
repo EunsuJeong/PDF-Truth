@@ -4,8 +4,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,6 +26,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.runtime.*
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.input.pointer.pointerInput
 import com.pdftruth.ui.gesture.pinchToZoom
 
 @Composable
@@ -32,6 +35,9 @@ fun ViewerScreen(
     onNavigateUp: () -> Unit,
     onCurrentPageChanged: (Int) -> Unit,
     onToggleBookmark: () -> Unit,
+    onSearchQueryChanged: (String) -> Unit,
+    onSearchExecute: () -> Unit,
+    onSearchResultClick: (Int) -> Unit,
     pdfUri: Uri? = null,
 ) {
     Scaffold { innerPadding ->
@@ -114,12 +120,64 @@ fun ViewerScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.End,
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
+                            OutlinedTextField(
+                                value = uiState.searchQuery,
+                                onValueChange = onSearchQueryChanged,
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                label = { Text("Search") },
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(onClick = onSearchExecute) {
+                                Text(if (uiState.isSearching) "..." else "Go")
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
                             Button(onClick = onToggleBookmark) {
                                 Text(if (isCurrentBookmarked) "북마크 삭제" else "북마크 추가")
                             }
                         }
+
+                        if (uiState.searchNotice != null) {
+                            Text(
+                                text = uiState.searchNotice,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                            )
+                        }
+
+                        if (uiState.searchResults.isNotEmpty()) {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 140.dp)
+                                    .padding(horizontal = 16.dp),
+                            ) {
+                                itemsIndexed(uiState.searchResults) { _, item ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text("p${item.pageIndex + 1}: ${item.summary}")
+                                        Button(onClick = {
+                                            onSearchResultClick(item.pageIndex)
+                                            coroutineScope.launch {
+                                                listState.animateScrollToItem(item.pageIndex)
+                                            }
+                                        }) {
+                                            Text("Go")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         LazyColumn(
                             state = listState,
                             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -145,6 +203,13 @@ fun ViewerScreen(
                                                     .fillMaxWidth(0.9f)
                                                     .aspectRatio(0.707f)
                                                     .scale(scale)
+                                                    .pointerInput(scale) {
+                                                        detectTapGestures(
+                                                            onDoubleTap = {
+                                                                scale = if (scale <= 1f) 2f else 1f
+                                                            }
+                                                        )
+                                                    }
                                                     .pinchToZoom(
                                                         scale = scale,
                                                         onScaleChange = { scale = it },

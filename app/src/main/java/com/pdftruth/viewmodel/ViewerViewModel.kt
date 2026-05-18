@@ -9,6 +9,7 @@ import com.pdftruth.domain.model.ReadingProgress
 import com.pdftruth.domain.model.RecentDocument
 import com.pdftruth.domain.repository.BookmarkRepository
 import com.pdftruth.domain.repository.DocumentRepository
+import com.pdftruth.domain.repository.PdfSearchRepository
 import com.pdftruth.domain.repository.ReaderPreferencesRepository
 import com.pdftruth.domain.repository.ReadingProgressRepository
 import com.pdftruth.domain.repository.RecentDocumentRepository
@@ -30,6 +31,7 @@ class ViewerViewModel(
     private val readingProgressRepository: ReadingProgressRepository,
     private val readerPreferencesRepository: ReaderPreferencesRepository,
     private val bookmarkRepository: BookmarkRepository,
+    private val pdfSearchRepository: PdfSearchRepository,
     private val documentRepository: DocumentRepository,
     context: Context,
 ) : ViewModel() {
@@ -119,6 +121,64 @@ class ViewerViewModel(
         viewModelScope.launch(dispatcherProvider.io) {
             bookmarkRepository.setBookmarked(uri, page, !bookmarked)
         }
+    }
+
+    fun updateSearchQuery(query: String) {
+        val state = _uiState.value
+        if (state is ViewerUiState.Success) {
+            _uiState.value = state.copy(searchQuery = query)
+        }
+    }
+
+    fun executeSearch() {
+        val state = _uiState.value
+        if (state !is ViewerUiState.Success) return
+
+        val query = state.searchQuery.trim()
+        val uri = state.documentUri ?: return
+        if (query.isEmpty()) {
+            _uiState.value = state.copy(searchResults = emptyList(), searchNotice = "Enter a search query")
+            return
+        }
+
+        _uiState.value = state.copy(isSearching = true, searchNotice = null)
+        viewModelScope.launch(dispatcherProvider.io) {
+            try {
+                val results = pdfSearchRepository.search(
+                    documentUri = uri,
+                    query = query,
+                    pageCount = state.pageCount,
+                )
+
+                val current = _uiState.value
+                if (current is ViewerUiState.Success) {
+                    val notice = if (results.isEmpty()) {
+                        "No results. PdfRenderer cannot extract text; search engine is scaffold-only for now."
+                    } else {
+                        null
+                    }
+                    _uiState.value = current.copy(
+                        isSearching = false,
+                        searchNotice = notice,
+                        searchResults = results.map {
+                            SearchResultUi(pageIndex = it.pageIndex, summary = it.summary)
+                        },
+                    )
+                }
+            } catch (e: Exception) {
+                val current = _uiState.value
+                if (current is ViewerUiState.Success) {
+                    _uiState.value = current.copy(
+                        isSearching = false,
+                        searchNotice = "Search failed: ${e.localizedMessage}",
+                    )
+                }
+            }
+        }
+    }
+
+    fun openSearchResult(pageIndex: Int) {
+        setCurrentPage(pageIndex)
     }
 
     private suspend fun prefetchAround(centerPage: Int) {

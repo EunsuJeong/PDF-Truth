@@ -79,6 +79,7 @@ fun AppNavGraph(
                             readingProgressRepository = container.readingProgressRepository,
                             readerPreferencesRepository = container.readerPreferencesRepository,
                             bookmarkRepository = container.bookmarkRepository,
+                            pdfSearchRepository = container.pdfSearchRepository,
                             documentRepository = container.documentRepository,
                             context = navController.context,
                         ) as T
@@ -100,6 +101,9 @@ fun AppNavGraph(
                 onNavigateUp = { navController.popBackStack() },
                 onCurrentPageChanged = viewModel::setCurrentPage,
                 onToggleBookmark = viewModel::toggleCurrentPageBookmark,
+                onSearchQueryChanged = viewModel::updateSearchQuery,
+                onSearchExecute = viewModel::executeSearch,
+                onSearchResultClick = viewModel::openSearchResult,
                 pdfUri = uri,
             )
         }
