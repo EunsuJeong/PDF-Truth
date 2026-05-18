@@ -14,6 +14,7 @@ import com.pdftruth.viewer.PageRenderRequest
 import com.pdftruth.viewer.engine.AndroidPdfRendererEngine
 import com.pdftruth.util.DefaultDispatcherProvider
 
+
 class ViewerViewModel : ViewModel() {
     private val dispatcherProvider = DefaultDispatcherProvider
     private val _uiState = MutableStateFlow<ViewerUiState>(ViewerUiState.Idle)
@@ -22,6 +23,9 @@ class ViewerViewModel : ViewModel() {
     private var currentSession: com.pdftruth.viewer.PdfDocumentSession? = null
     private var engine: AndroidPdfRendererEngine? = null
     private var pageStates: MutableList<PageUiState> = mutableListOf()
+    private var _currentPage: Int = 0
+    // 간단한 페이지별 Bitmap 캐시 (LRU 등 확장 가능)
+    private val bitmapCache = mutableMapOf<Int, Bitmap>()
 
     fun openPdf(uri: Uri?) {
         if (uri == null) {
@@ -38,22 +42,27 @@ class ViewerViewModel : ViewModel() {
                 currentSession = session
                 val pageCount = session.pageCount
                 pageStates = MutableList(pageCount) { PageUiState.Loading }
+                _currentPage = 0
                 // 최초 상태 전달
                 _uiState.value = ViewerUiState.Success(
                     pageCount = pageCount,
                     pages = pageStates.toList(),
                     fileName = null,
-                    currentPage = 0
+                    currentPage = _currentPage
                 )
                 // 각 페이지 비동기 렌더링
                 for (i in 0 until pageCount) {
                     launch(dispatcherProvider.io) {
                         try {
-                            val pageBitmapResult = engine!!.renderPage(
-                                session,
-                                PageRenderRequest(pageIndex = i, width = 1080, height = 1440)
-                            )
-                            val bitmap = pageBitmapResult.bitmap
+                            // 캐시 우선
+                            val cached = bitmapCache[i]
+                            val bitmap = if (cached != null) cached else {
+                                val pageBitmapResult = engine!!.renderPage(
+                                    session,
+                                    PageRenderRequest(pageIndex = i, width = 1080, height = 1440)
+                                )
+                                pageBitmapResult.bitmap?.also { bitmapCache[i] = it }
+                            }
                             if (bitmap != null) {
                                 pageStates[i] = PageUiState.BitmapReady(bitmap)
                             } else {
@@ -67,7 +76,7 @@ class ViewerViewModel : ViewModel() {
                             pageCount = pageCount,
                             pages = pageStates.toList(),
                             fileName = null,
-                            currentPage = 0
+                            currentPage = _currentPage
                         )
                     }
                 }
@@ -76,6 +85,42 @@ class ViewerViewModel : ViewModel() {
             }
         }
     }
+
+    fun setCurrentPage(page: Int) {
+        _currentPage = page
+        val state = _uiState.value
+        if (state is ViewerUiState.Success) {
+            _uiState.value = state.copy(currentPage = page)
+        }
+    }
+
+    fun nextPage() {
+        val state = _uiState.value
+        if (state is ViewerUiState.Success) {
+            val next = (state.currentPage + 1).coerceAtMost(state.pageCount - 1)
+            setCurrentPage(next)
+        }
+    }
+
+    fun prevPage() {
+        val state = _uiState.value
+        if (state is ViewerUiState.Success) {
+            val prev = (state.currentPage - 1).coerceAtLeast(0)
+            setCurrentPage(prev)
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        viewModelScope.launch(dispatcherProvider.io) {
+            currentSession?.let {
+                try {
+                    engine?.closeDocument(it)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+}
 
     override fun onCleared() {
         super.onCleared()

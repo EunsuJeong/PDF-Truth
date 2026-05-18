@@ -55,18 +55,48 @@ fun ViewerScreen(
                     val listState = rememberLazyListState()
                     val pageCount = uiState.pageCount
                     val pages = uiState.pages
-                    // 현재 보이는 페이지 index 추적 (준비)
-                    val visiblePage by remember {
-                        derivedStateOf {
-                            listState.firstVisibleItemIndex
+                    val currentPage = uiState.currentPage
+                    val coroutineScope = rememberCoroutineScope()
+                    // LazyListState와 ViewModel currentPage 동기화
+                    LaunchedEffect(listState.firstVisibleItemIndex) {
+                        if (listState.firstVisibleItemIndex != currentPage) {
+                            // ViewModel에 현재 페이지 전달
+                            // (무한 루프 방지: 실제 동기화 필요시만 호출)
+                            onCurrentPageChanged?.invoke(listState.firstVisibleItemIndex)
                         }
                     }
                     Column(
                         modifier = Modifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("페이지 ${visiblePage + 1} / $pageCount", style = MaterialTheme.typography.bodyMedium)
-                        Spacer(modifier = Modifier.height(8.dp))
+                        // 상단 페이지 바
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp, horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Button(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        val prev = (currentPage - 1).coerceAtLeast(0)
+                                        listState.animateScrollToItem(prev)
+                                    }
+                                },
+                                enabled = currentPage > 0
+                            ) { Text("이전") }
+                            Text("페이지 ${currentPage + 1} / $pageCount", style = MaterialTheme.typography.bodyMedium)
+                            Button(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        val next = (currentPage + 1).coerceAtMost(pageCount - 1)
+                                        listState.animateScrollToItem(next)
+                                    }
+                                },
+                                enabled = currentPage < pageCount - 1
+                            ) { Text("다음") }
+                        }
                         LazyColumn(
                             state = listState,
                             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -89,7 +119,7 @@ fun ViewerScreen(
                                                 contentDescription = "PDF 페이지 ${idx + 1}",
                                                 modifier = Modifier
                                                     .fillMaxWidth(0.9f)
-                                                    .aspectRatio(0.707f) // A4 비율
+                                                    .aspectRatio(0.707f)
                                             )
                                         }
                                         is PageUiState.Error -> {
