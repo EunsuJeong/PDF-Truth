@@ -31,6 +31,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.pointer.pointerInput
 import com.pdftruth.ui.gesture.pinchToZoom
 import androidx.compose.foundation.shape.RoundedCornerShape
+import kotlinx.coroutines.launch
 
 @Composable
 fun ViewerScreen(
@@ -40,7 +41,10 @@ fun ViewerScreen(
     onToggleBookmark: () -> Unit,
     onSearchQueryChanged: (String) -> Unit,
     onSearchExecute: () -> Unit,
+    onCancelSearch: () -> Unit,
     onSearchResultClick: (Int) -> Unit,
+    onSearchPrevious: () -> Unit,
+    onSearchNext: () -> Unit,
     onToggleThumbnails: () -> Unit,
     onThumbnailClick: (Int) -> Unit,
     pdfUri: Uri? = null,
@@ -73,6 +77,13 @@ fun ViewerScreen(
                     val currentPage = uiState.currentPage
                     val isCurrentBookmarked = uiState.bookmarkedPages.contains(currentPage)
                     val coroutineScope = rememberCoroutineScope()
+                    val hasSearchResults = uiState.searchResults.isNotEmpty()
+                    val selectedSearchIndex = uiState.selectedSearchResultIndex
+                    val selectedSearchDisplay = if (hasSearchResults && selectedSearchIndex >= 0) {
+                        "${selectedSearchIndex + 1} / ${uiState.searchResults.size}"
+                    } else {
+                        "0 / 0"
+                    }
                     // 확대/축소 상태 (전체/페이지별 확장 가능)
                     var scale by remember { mutableStateOf(1f) }
                     val minScale = 1f
@@ -135,8 +146,17 @@ fun ViewerScreen(
                                 label = { Text("Search") },
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Button(onClick = onSearchExecute) {
+                            Button(
+                                onClick = onSearchExecute,
+                                enabled = !uiState.isSearching,
+                            ) {
                                 Text(if (uiState.isSearching) "..." else "Go")
+                            }
+                            if (uiState.canCancelSearch) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Button(onClick = onCancelSearch) {
+                                    Text("취소")
+                                }
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                             Button(onClick = onToggleThumbnails) {
@@ -146,6 +166,35 @@ fun ViewerScreen(
                             Button(onClick = onToggleBookmark) {
                                 Text(if (isCurrentBookmarked) "북마크 삭제" else "북마크 추가")
                             }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Button(onClick = onSearchPrevious, enabled = hasSearchResults) {
+                                Text("검색 이전")
+                            }
+                            Button(onClick = onSearchNext, enabled = hasSearchResults) {
+                                Text("검색 다음")
+                            }
+                            Text(
+                                text = "결과: $selectedSearchDisplay",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+
+                        if (uiState.bookmarkedPages.isEmpty()) {
+                            Text(
+                                text = "저장된 북마크가 없습니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                            )
                         }
 
                         if (uiState.searchNotice != null) {
@@ -165,15 +214,21 @@ fun ViewerScreen(
                                     .heightIn(max = 140.dp)
                                     .padding(horizontal = 16.dp),
                             ) {
-                                itemsIndexed(uiState.searchResults) { _, item ->
+                                itemsIndexed(uiState.searchResults) { resultIndex, item ->
+                                    val isSelected = resultIndex == selectedSearchIndex
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            .border(
+                                                width = if (isSelected) 1.dp else 0.dp,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                                shape = RoundedCornerShape(8.dp),
+                                            )
                                             .padding(vertical = 4.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text("p${item.pageIndex + 1}: ${item.summary}")
+                                        Text("p${item.pageIndex + 1} (${item.matchCount}): ${item.summary}")
                                         Button(onClick = {
                                             onSearchResultClick(item.pageIndex)
                                             coroutineScope.launch {
@@ -185,6 +240,14 @@ fun ViewerScreen(
                                     }
                                 }
                             }
+                        } else if (!uiState.isSearching && uiState.searchQuery.isNotBlank()) {
+                            Text(
+                                text = "검색 결과가 없습니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                            )
                         }
 
                         LazyColumn(

@@ -1,6 +1,6 @@
 package com.pdftruth.data.repository
 
-import com.pdftruth.domain.model.PdfSearchResult
+import com.pdftruth.domain.model.PdfSearchOutcome
 import com.pdftruth.domain.repository.PdfSearchRepository
 import com.pdftruth.viewer.search.PdfSearchEngine
 
@@ -11,7 +11,7 @@ class PdfSearchRepositoryImpl(
         documentUri: String,
         query: String,
         pageCount: Int,
-    ): List<PdfSearchResult> {
+    ): PdfSearchOutcome {
         return engine.search(documentUri, query, pageCount)
     }
 }

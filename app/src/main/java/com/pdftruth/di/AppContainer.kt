@@ -17,7 +17,7 @@ import com.pdftruth.domain.repository.ReaderPreferencesRepository
 import com.pdftruth.domain.repository.ReadingProgressRepository
 import com.pdftruth.domain.repository.RecentDocumentRepository
 import com.pdftruth.storage.ReaderPreferencesStorage
-import com.pdftruth.viewer.search.AndroidPdfRendererSearchEngine
+import com.pdftruth.viewer.search.PdfSearchEngineProvider
 
 class AppContainer private constructor(context: Context) {
 
@@ -54,7 +54,7 @@ class AppContainer private constructor(context: Context) {
     }
 
     val pdfSearchRepository: PdfSearchRepository by lazy {
-        PdfSearchRepositoryImpl(AndroidPdfRendererSearchEngine())
+        PdfSearchRepositoryImpl(PdfSearchEngineProvider(appContext).createDefault())
     }
 
     companion object {
