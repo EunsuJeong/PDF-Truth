@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.border
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -29,8 +31,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.runtime.*
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextOverflow
 import com.pdftruth.ui.gesture.pinchToZoom
 import androidx.compose.foundation.shape.RoundedCornerShape
+import kotlinx.coroutines.launch
 
 @Composable
 fun ViewerScreen(
@@ -73,6 +77,7 @@ fun ViewerScreen(
                     val currentPage = uiState.currentPage
                     val isCurrentBookmarked = uiState.bookmarkedPages.contains(currentPage)
                     val coroutineScope = rememberCoroutineScope()
+                    var isSearchPanelExpanded by remember { mutableStateOf(false) }
                     // 확대/축소 상태 (전체/페이지별 확장 가능)
                     var scale by remember { mutableStateOf(1f) }
                     val minScale = 1f
@@ -121,69 +126,127 @@ fun ViewerScreen(
                             ) { Text("다음") }
                         }
 
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            ),
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    OutlinedTextField(
+                                        value = uiState.searchQuery,
+                                        onValueChange = onSearchQueryChanged,
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true,
+                                        label = { Text("Search") },
+                                    )
+                                    Button(onClick = onSearchExecute) {
+                                        if (uiState.isSearching) {
+                                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                        } else {
+                                            Text("Go")
+                                        }
+                                    }
+                                    Button(onClick = { isSearchPanelExpanded = !isSearchPanelExpanded }) {
+                                        Text(if (isSearchPanelExpanded) "Hide" else "Results")
+                                    }
+                                }
+
+                                if (uiState.searchNotice != null) {
+                                    Text(
+                                        text = uiState.searchNotice,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 6.dp),
+                                    )
+                                }
+
+                                if (isSearchPanelExpanded) {
+                                    if (uiState.searchResults.isNotEmpty()) {
+                                        LazyColumn(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(max = 160.dp)
+                                                .padding(top = 6.dp),
+                                        ) {
+                                            itemsIndexed(uiState.searchResults) { _, item ->
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(vertical = 4.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    Text(
+                                                        text = "p${item.pageIndex + 1}: ${item.summary}",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f),
+                                                    )
+                                                    Button(onClick = {
+                                                        onSearchResultClick(item.pageIndex)
+                                                        coroutineScope.launch {
+                                                            listState.animateScrollToItem(item.pageIndex)
+                                                        }
+                                                    }) {
+                                                        Text("Go")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else if (!uiState.isSearching && uiState.searchQuery.isNotBlank()) {
+                                        Text(
+                                            text = "검색 결과가 없습니다.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 6.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            OutlinedTextField(
-                                value = uiState.searchQuery,
-                                onValueChange = onSearchQueryChanged,
+                            Button(
+                                onClick = onToggleThumbnails,
                                 modifier = Modifier.weight(1f),
-                                singleLine = true,
-                                label = { Text("Search") },
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Button(onClick = onSearchExecute) {
-                                Text(if (uiState.isSearching) "..." else "Go")
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Button(onClick = onToggleThumbnails) {
-                                Text(if (uiState.showThumbnails) "썸네일 숨김" else "썸네일 보기")
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Button(onClick = onToggleBookmark) {
-                                Text(if (isCurrentBookmarked) "북마크 삭제" else "북마크 추가")
-                            }
-                        }
-
-                        if (uiState.searchNotice != null) {
-                            Text(
-                                text = uiState.searchNotice,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp),
-                            )
-                        }
-
-                        if (uiState.searchResults.isNotEmpty()) {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 140.dp)
-                                    .padding(horizontal = 16.dp),
                             ) {
-                                itemsIndexed(uiState.searchResults) { _, item ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 4.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text("p${item.pageIndex + 1}: ${item.summary}")
-                                        Button(onClick = {
-                                            onSearchResultClick(item.pageIndex)
-                                            coroutineScope.launch {
-                                                listState.animateScrollToItem(item.pageIndex)
-                                            }
-                                        }) {
-                                            Text("Go")
-                                        }
-                                    }
-                                }
+                                Text(
+                                    text = if (uiState.showThumbnails) "썸네일 숨김" else "썸네일 보기",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Button(
+                                onClick = onToggleBookmark,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(
+                                    text = if (isCurrentBookmarked) "북마크 삭제" else "북마크 추가",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         }
 
