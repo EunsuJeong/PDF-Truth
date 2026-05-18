@@ -23,6 +23,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.*
+import androidx.compose.ui.draw.scale
+import com.pdftruth.ui.gesture.pinchToZoom
 
 @Composable
 fun ViewerScreen(
@@ -57,11 +59,13 @@ fun ViewerScreen(
                     val pages = uiState.pages
                     val currentPage = uiState.currentPage
                     val coroutineScope = rememberCoroutineScope()
+                    // 확대/축소 상태 (전체/페이지별 확장 가능)
+                    var scale by remember { mutableStateOf(1f) }
+                    val minScale = 1f
+                    val maxScale = 5f
                     // LazyListState와 ViewModel currentPage 동기화
                     LaunchedEffect(listState.firstVisibleItemIndex) {
                         if (listState.firstVisibleItemIndex != currentPage) {
-                            // ViewModel에 현재 페이지 전달
-                            // (무한 루프 방지: 실제 동기화 필요시만 호출)
                             onCurrentPageChanged?.invoke(listState.firstVisibleItemIndex)
                         }
                     }
@@ -69,7 +73,7 @@ fun ViewerScreen(
                         modifier = Modifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // 상단 페이지 바
+                        // 상단 페이지/확대 바
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -86,7 +90,10 @@ fun ViewerScreen(
                                 },
                                 enabled = currentPage > 0
                             ) { Text("이전") }
-                            Text("페이지 ${currentPage + 1} / $pageCount", style = MaterialTheme.typography.bodyMedium)
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("페이지 ${currentPage + 1} / $pageCount", style = MaterialTheme.typography.bodyMedium)
+                                Text("확대: ${(scale * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
+                            }
                             Button(
                                 onClick = {
                                     coroutineScope.launch {
@@ -114,12 +121,20 @@ fun ViewerScreen(
                                             CircularProgressIndicator()
                                         }
                                         is PageUiState.BitmapReady -> {
+                                            // Pinch Zoom + scale 적용
                                             Image(
                                                 bitmap = pageState.bitmap.asImageBitmap(),
                                                 contentDescription = "PDF 페이지 ${idx + 1}",
                                                 modifier = Modifier
                                                     .fillMaxWidth(0.9f)
                                                     .aspectRatio(0.707f)
+                                                    .scale(scale)
+                                                    .pinchToZoom(
+                                                        scale = scale,
+                                                        onScaleChange = { scale = it },
+                                                        minScale = minScale,
+                                                        maxScale = maxScale
+                                                    )
                                             )
                                         }
                                         is PageUiState.Error -> {
