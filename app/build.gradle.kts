@@ -1,3 +1,5 @@
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -52,6 +54,14 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+
+    applicationVariants.configureEach {
+        if (buildType.name == "debug") {
+            outputs.configureEach {
+                (this as BaseVariantOutputImpl).outputFileName = "260518_01.apk"
+            }
         }
     }
 }
