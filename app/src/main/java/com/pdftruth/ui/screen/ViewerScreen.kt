@@ -31,6 +31,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.pointer.pointerInput
 import com.pdftruth.ui.gesture.pinchToZoom
 import androidx.compose.foundation.shape.RoundedCornerShape
+import kotlinx.coroutines.launch
 
 @Composable
 fun ViewerScreen(
