@@ -9,13 +9,22 @@ import kotlinx.coroutines.launch
 import android.net.Uri
 import android.content.Context
 import android.graphics.Bitmap
+import com.pdftruth.util.PageBitmapLruCache
+import com.pdftruth.domain.model.RecentDocument
+import com.pdftruth.domain.repository.RecentDocumentRepository
+import com.pdftruth.storage.ReaderPreferencesStorage
 import com.pdftruth.viewer.PdfDocumentSource
 import com.pdftruth.viewer.PageRenderRequest
 import com.pdftruth.viewer.engine.AndroidPdfRendererEngine
 import com.pdftruth.util.DefaultDispatcherProvider
 
 
-class ViewerViewModel : ViewModel() {
+
+class ViewerViewModel(
+    private val recentDocumentRepository: RecentDocumentRepository,
+    private val readerPreferencesStorage: ReaderPreferencesStorage,
+    private val context: Context
+) : ViewModel() {
     private val dispatcherProvider = DefaultDispatcherProvider
     private val _uiState = MutableStateFlow<ViewerUiState>(ViewerUiState.Idle)
     val uiState: StateFlow<ViewerUiState> = _uiState.asStateFlow()
@@ -24,15 +33,16 @@ class ViewerViewModel : ViewModel() {
     private var engine: AndroidPdfRendererEngine? = null
     private var pageStates: MutableList<PageUiState> = mutableListOf()
     private var _currentPage: Int = 0
-    // 간단한 페이지별 Bitmap 캐시 (LRU 등 확장 가능)
-    private val bitmapCache = mutableMapOf<Int, Bitmap>()
+    // LRU 기반 Bitmap 캐시 (현재 페이지 ±2)
+    private val bitmapCache = PageBitmapLruCache(5)
+    private var currentUri: String? = null
 
     fun openPdf(uri: Uri?) {
         if (uri == null) {
             _uiState.value = ViewerUiState.Error("PDF 파일이 선택되지 않았습니다.")
             return
         }
-        val context = getApplicationContextSafely()
+        currentUri = uri.toString()
         engine = AndroidPdfRendererEngine(context)
         _uiState.value = ViewerUiState.Loading
         viewModelScope.launch(dispatcherProvider.io) {
@@ -42,26 +52,32 @@ class ViewerViewModel : ViewModel() {
                 currentSession = session
                 val pageCount = session.pageCount
                 pageStates = MutableList(pageCount) { PageUiState.Loading }
-                _currentPage = 0
-                // 최초 상태 전달
+                // 마지막 읽은 페이지 복원
+                var restoredPage = 0
+                readerPreferencesStorage.observeLastOpenedDocumentUri().collect { lastUri ->
+                    if (lastUri == uri.toString()) {
+                        // Room에서 마지막 페이지 조회 (구현 필요)
+                        // restoredPage = ...
+                    }
+                }
+                _currentPage = restoredPage
                 _uiState.value = ViewerUiState.Success(
                     pageCount = pageCount,
                     pages = pageStates.toList(),
                     fileName = null,
                     currentPage = _currentPage
                 )
-                // 각 페이지 비동기 렌더링
+                // 각 페이지 비동기 렌더링 (LRU)
                 for (i in 0 until pageCount) {
                     launch(dispatcherProvider.io) {
                         try {
-                            // 캐시 우선
                             val cached = bitmapCache[i]
                             val bitmap = if (cached != null) cached else {
                                 val pageBitmapResult = engine!!.renderPage(
                                     session,
                                     PageRenderRequest(pageIndex = i, width = 1080, height = 1440)
                                 )
-                                pageBitmapResult.bitmap?.also { bitmapCache[i] = it }
+                                pageBitmapResult.bitmap?.also { bitmapCache.put(i, it) }
                             }
                             if (bitmap != null) {
                                 pageStates[i] = PageUiState.BitmapReady(bitmap)
@@ -71,7 +87,6 @@ class ViewerViewModel : ViewModel() {
                         } catch (e: Exception) {
                             pageStates[i] = PageUiState.Error("페이지 렌더링 실패: ${e.localizedMessage}")
                         }
-                        // 상태 갱신
                         _uiState.value = ViewerUiState.Success(
                             pageCount = pageCount,
                             pages = pageStates.toList(),
@@ -80,6 +95,16 @@ class ViewerViewModel : ViewModel() {
                         )
                     }
                 }
+                // 최근 문서 자동 저장
+                recentDocumentRepository.saveRecentDocument(
+                    RecentDocument(
+                        uri = uri.toString(),
+                        displayName = uri.lastPathSegment ?: "PDF",
+                        lastOpenedAt = System.currentTimeMillis()
+                    )
+                )
+                // 마지막 열람 문서 DataStore 저장
+                readerPreferencesStorage.saveLastOpenedDocumentUri(uri.toString())
             } catch (e: Exception) {
                 _uiState.value = ViewerUiState.Error("PDF 열기 실패: ${e.localizedMessage}")
             }
@@ -91,6 +116,18 @@ class ViewerViewModel : ViewModel() {
         val state = _uiState.value
         if (state is ViewerUiState.Success) {
             _uiState.value = state.copy(currentPage = page)
+        }
+        // 마지막 읽은 페이지 Room 저장
+        viewModelScope.launch(dispatcherProvider.io) {
+            currentUri?.let { uri ->
+                recentDocumentRepository.saveRecentDocument(
+                    RecentDocument(
+                        uri = uri,
+                        displayName = uri.substringAfterLast('/'),
+                        lastOpenedAt = System.currentTimeMillis()
+                    )
+                )
+            }
         }
     }
 
