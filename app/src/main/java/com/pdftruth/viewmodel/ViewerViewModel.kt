@@ -15,6 +15,7 @@ import com.pdftruth.domain.repository.ReadingProgressRepository
 import com.pdftruth.domain.repository.RecentDocumentRepository
 import com.pdftruth.util.DefaultDispatcherProvider
 import com.pdftruth.util.PageBitmapLruCache
+import com.pdftruth.util.ThumbnailBitmapLruCache
 import com.pdftruth.viewer.PageRenderRequest
 import com.pdftruth.viewer.PdfDocumentSession
 import com.pdftruth.viewer.PdfDocumentSource
@@ -46,6 +47,7 @@ class ViewerViewModel(
     private var currentDisplayName: String? = null
     private var pageStates: MutableList<PageUiState> = mutableListOf()
     private val bitmapCache = PageBitmapLruCache(5)
+    private val thumbnailCache = ThumbnailBitmapLruCache(20)
     private var bookmarkObserveJob: Job? = null
 
     fun openPdf(uri: Uri?) {
@@ -80,6 +82,7 @@ class ViewerViewModel(
                     documentUri = uriString,
                     currentPage = restoredPage,
                     bookmarkedPages = emptySet(),
+                    thumbnails = buildInitialThumbnails(pageCount),
                 )
 
                 readerPreferencesRepository.saveLastOpenedDocumentUri(uriString)
@@ -87,6 +90,7 @@ class ViewerViewModel(
                 persistReadingProgress(uriString, restoredPage)
                 observeBookmarks(uriString)
                 prefetchAround(restoredPage)
+                prefetchThumbnailsAround(restoredPage)
             } catch (e: Exception) {
                 _uiState.value = ViewerUiState.Error("Failed to open PDF: ${e.localizedMessage}")
             }
@@ -107,6 +111,14 @@ class ViewerViewModel(
             persistReadingProgress(uri, target)
             persistRecentDocument(uri)
             prefetchAround(target)
+            prefetchThumbnailsAround(target)
+        }
+    }
+
+    fun toggleThumbnails() {
+        val state = _uiState.value
+        if (state is ViewerUiState.Success) {
+            _uiState.value = state.copy(showThumbnails = !state.showThumbnails)
         }
     }
 
@@ -181,6 +193,10 @@ class ViewerViewModel(
         setCurrentPage(pageIndex)
     }
 
+    fun openThumbnailPage(pageIndex: Int) {
+        setCurrentPage(pageIndex)
+    }
+
     private suspend fun prefetchAround(centerPage: Int) {
         val state = _uiState.value
         val session = currentSession ?: return
@@ -190,6 +206,39 @@ class ViewerViewModel(
         val end = (centerPage + 2).coerceAtMost(state.pageCount - 1)
         for (index in start..end) {
             renderPageIfNeeded(index, state.pageCount, session)
+        }
+    }
+
+    private suspend fun prefetchThumbnailsAround(centerPage: Int) {
+        val state = _uiState.value
+        val session = currentSession ?: return
+        if (state !is ViewerUiState.Success) return
+
+        val start = (centerPage - 4).coerceAtLeast(0)
+        val end = (centerPage + 4).coerceAtMost(state.pageCount - 1)
+        for (index in start..end) {
+            renderThumbnailIfNeeded(index, state.pageCount, session)
+        }
+    }
+
+    private suspend fun renderThumbnailIfNeeded(index: Int, pageCount: Int, session: PdfDocumentSession) {
+        val cached = thumbnailCache[index]
+        if (cached != null) {
+            publishThumbnail(index, cached, pageCount)
+            return
+        }
+
+        try {
+            val bitmap = engine?.renderPage(
+                session,
+                PageRenderRequest(pageIndex = index, width = 220, height = 300),
+            )?.bitmap
+            if (bitmap != null) {
+                thumbnailCache.put(index, bitmap)
+                publishThumbnail(index, bitmap, pageCount)
+            }
+        } catch (_: Exception) {
+            // 썸네일 실패는 본문 렌더링에 영향 주지 않음
         }
     }
 
@@ -227,6 +276,26 @@ class ViewerViewModel(
                 pageCount = pageCount,
                 pages = pageStates.toList(),
             )
+        }
+    }
+
+    private fun publishThumbnail(index: Int, bitmap: Bitmap, pageCount: Int) {
+        val state = _uiState.value
+        if (state is ViewerUiState.Success) {
+            val updated = state.thumbnails.toMutableList()
+            if (index in updated.indices) {
+                updated[index] = updated[index].copy(bitmap = bitmap)
+                _uiState.value = state.copy(
+                    pageCount = pageCount,
+                    thumbnails = updated,
+                )
+            }
+        }
+    }
+
+    private fun buildInitialThumbnails(pageCount: Int): List<ThumbnailUi> {
+        return List(pageCount) { index ->
+            ThumbnailUi(pageIndex = index, bitmap = null)
         }
     }
 
@@ -284,5 +353,12 @@ class ViewerViewModel(
             }
         }
         bitmapCache.evictAll()
+
+        thumbnailCache.snapshot().values.forEach { bitmap: Bitmap ->
+            if (!bitmap.isRecycled) {
+                bitmap.recycle()
+            }
+        }
+        thumbnailCache.evictAll()
     }
 }

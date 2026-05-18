@@ -104,6 +104,8 @@ fun AppNavGraph(
                 onSearchQueryChanged = viewModel::updateSearchQuery,
                 onSearchExecute = viewModel::executeSearch,
                 onSearchResultClick = viewModel::openSearchResult,
+                onToggleThumbnails = viewModel::toggleThumbnails,
+                onThumbnailClick = viewModel::openThumbnailPage,
                 pdfUri = uri,
             )
         }

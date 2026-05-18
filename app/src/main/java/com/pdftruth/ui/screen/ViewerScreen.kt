@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.border
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -20,6 +21,7 @@ import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,6 +30,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.pointer.pointerInput
 import com.pdftruth.ui.gesture.pinchToZoom
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 @Composable
 fun ViewerScreen(
@@ -38,6 +41,8 @@ fun ViewerScreen(
     onSearchQueryChanged: (String) -> Unit,
     onSearchExecute: () -> Unit,
     onSearchResultClick: (Int) -> Unit,
+    onToggleThumbnails: () -> Unit,
+    onThumbnailClick: (Int) -> Unit,
     pdfUri: Uri? = null,
 ) {
     Scaffold { innerPadding ->
@@ -134,6 +139,10 @@ fun ViewerScreen(
                                 Text(if (uiState.isSearching) "..." else "Go")
                             }
                             Spacer(modifier = Modifier.width(8.dp))
+                            Button(onClick = onToggleThumbnails) {
+                                Text(if (uiState.showThumbnails) "썸네일 숨김" else "썸네일 보기")
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
                             Button(onClick = onToggleBookmark) {
                                 Text(if (isCurrentBookmarked) "북마크 삭제" else "북마크 추가")
                             }
@@ -225,6 +234,61 @@ fun ViewerScreen(
                                 }
                             }
                         }
+
+                        if (uiState.showThumbnails) {
+                            LazyRow(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp),
+                            ) {
+                                itemsIndexed(uiState.thumbnails, key = { _, item -> item.pageIndex }) { _, item ->
+                                    val isSelected = item.pageIndex == currentPage
+                                    Column(
+                                        modifier = Modifier
+                                            .padding(horizontal = 4.dp)
+                                            .width(72.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(width = 64.dp, height = 88.dp)
+                                                .border(
+                                                    width = if (isSelected) 2.dp else 1.dp,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                                    shape = RoundedCornerShape(6.dp),
+                                                )
+                                                .pointerInput(item.pageIndex) {
+                                                    detectTapGestures(
+                                                        onTap = {
+                                                            onThumbnailClick(item.pageIndex)
+                                                            coroutineScope.launch {
+                                                                listState.animateScrollToItem(item.pageIndex)
+                                                            }
+                                                        }
+                                                    )
+                                                },
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            val bitmap = item.bitmap
+                                            if (bitmap != null) {
+                                                Image(
+                                                    bitmap = bitmap.asImageBitmap(),
+                                                    contentDescription = "Thumbnail ${item.pageIndex + 1}",
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .padding(2.dp),
+                                                )
+                                            } else {
+                                                Text("...", style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+                                        Text("${item.pageIndex + 1}", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
+
                         Button(onClick = onNavigateUp, modifier = Modifier.padding(top = 16.dp)) {
                             Text("Back")
                         }

@@ -2,6 +2,11 @@ package com.pdftruth.viewmodel
 
 import android.graphics.Bitmap
 
+data class ThumbnailUi(
+    val pageIndex: Int,
+    val bitmap: Bitmap?,
+)
+
 data class SearchResultUi(
     val pageIndex: Int,
     val summary: String,
@@ -21,6 +26,8 @@ sealed class ViewerUiState {
         val searchResults: List<SearchResultUi> = emptyList(),
         val isSearching: Boolean = false,
         val searchNotice: String? = null,
+        val showThumbnails: Boolean = false,
+        val thumbnails: List<ThumbnailUi> = emptyList(),
     ) : ViewerUiState()
     data class Error(val message: String) : ViewerUiState()
 }
