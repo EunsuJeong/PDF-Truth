@@ -74,6 +74,17 @@ fun MainScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             LazyColumn(modifier = Modifier.fillMaxSize()) {
+                if (uiState.recentDocuments.isEmpty()) {
+                    item {
+                        Text(
+                            text = "최근 문서가 없습니다. 먼저 PDF 파일을 선택해 주세요.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                        )
+                    }
+                }
                 items(uiState.recentDocuments, key = { it.uri }) { item ->
                     Row(
                         modifier = Modifier

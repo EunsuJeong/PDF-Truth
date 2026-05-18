@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pdftruth.domain.model.ReadingProgress
 import com.pdftruth.domain.model.RecentDocument
+import com.pdftruth.domain.model.PdfSearchOutcome
 import com.pdftruth.domain.repository.BookmarkRepository
 import com.pdftruth.domain.repository.DocumentRepository
 import com.pdftruth.domain.repository.PdfSearchRepository
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.io.FileNotFoundException
 
 class ViewerViewModel(
     private val recentDocumentRepository: RecentDocumentRepository,
@@ -49,6 +51,7 @@ class ViewerViewModel(
     private val bitmapCache = PageBitmapLruCache(5)
     private val thumbnailCache = ThumbnailBitmapLruCache(20)
     private var bookmarkObserveJob: Job? = null
+    private var searchJob: Job? = null
 
     fun openPdf(uri: Uri?) {
         if (uri == null) {
@@ -61,6 +64,7 @@ class ViewerViewModel(
 
         viewModelScope.launch(dispatcherProvider.io) {
             try {
+                clearSearchState()
                 val document = documentRepository.getDocument(uriString)
                 currentDisplayName = document.displayName
 
@@ -91,8 +95,14 @@ class ViewerViewModel(
                 observeBookmarks(uriString)
                 prefetchAround(restoredPage)
                 prefetchThumbnailsAround(restoredPage)
+            } catch (e: SecurityException) {
+                _uiState.value = ViewerUiState.Error("파일 접근 권한이 만료되었거나 거부되었습니다. 파일을 다시 선택해 주세요.")
+            } catch (e: FileNotFoundException) {
+                _uiState.value = ViewerUiState.Error("파일을 찾을 수 없습니다. 삭제 또는 이동되었을 수 있습니다.")
+            } catch (e: IllegalArgumentException) {
+                _uiState.value = ViewerUiState.Error("손상되었거나 지원되지 않는 PDF입니다.")
             } catch (e: Exception) {
-                _uiState.value = ViewerUiState.Error("Failed to open PDF: ${e.localizedMessage}")
+                _uiState.value = ViewerUiState.Error("PDF 열기에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")
             }
         }
     }
@@ -145,36 +155,100 @@ class ViewerViewModel(
     fun executeSearch() {
         val state = _uiState.value
         if (state !is ViewerUiState.Success) return
+        if (state.isSearching) return
 
         val query = state.searchQuery.trim()
         val uri = state.documentUri ?: return
         if (query.isEmpty()) {
-            _uiState.value = state.copy(searchResults = emptyList(), searchNotice = "Enter a search query")
+            _uiState.value = state.copy(
+                searchResults = emptyList(),
+                selectedSearchResultIndex = -1,
+                searchNotice = "검색어를 입력하세요.",
+            )
             return
         }
 
-        _uiState.value = state.copy(isSearching = true, searchNotice = null)
-        viewModelScope.launch(dispatcherProvider.io) {
+        searchJob?.cancel()
+        _uiState.value = state.copy(
+            isSearching = true,
+            canCancelSearch = true,
+            searchNotice = "검색 중...",
+        )
+        searchJob = viewModelScope.launch(dispatcherProvider.io) {
             try {
-                val results = pdfSearchRepository.search(
+                when (val outcome = pdfSearchRepository.search(
                     documentUri = uri,
                     query = query,
                     pageCount = state.pageCount,
-                )
+                )) {
+                    is PdfSearchOutcome.Success -> {
+                        val current = _uiState.value
+                        if (current is ViewerUiState.Success) {
+                            val mapped = outcome.results.map {
+                                SearchResultUi(
+                                    pageIndex = it.pageIndex,
+                                    summary = it.summary,
+                                    matchCount = it.matchCount,
+                                )
+                            }
+                            val selectedIndex = if (mapped.isEmpty()) -1 else 0
+                            _uiState.value = current.copy(
+                                isSearching = false,
+                                canCancelSearch = false,
+                                searchNotice = null,
+                                searchResults = mapped,
+                                selectedSearchResultIndex = selectedIndex,
+                            )
+                            if (selectedIndex >= 0) {
+                                openSearchResultByIndex(selectedIndex)
+                            }
+                        }
+                    }
 
+                    is PdfSearchOutcome.Empty -> {
+                        val current = _uiState.value
+                        if (current is ViewerUiState.Success) {
+                            _uiState.value = current.copy(
+                                isSearching = false,
+                                canCancelSearch = false,
+                                searchNotice = "검색 결과가 없습니다.",
+                                searchResults = emptyList(),
+                                selectedSearchResultIndex = -1,
+                            )
+                        }
+                    }
+
+                    is PdfSearchOutcome.Unsupported -> {
+                        val current = _uiState.value
+                        if (current is ViewerUiState.Success) {
+                            _uiState.value = current.copy(
+                                isSearching = false,
+                                canCancelSearch = false,
+                                searchNotice = outcome.message,
+                                searchResults = emptyList(),
+                                selectedSearchResultIndex = -1,
+                            )
+                        }
+                    }
+
+                    is PdfSearchOutcome.Failure -> {
+                        val current = _uiState.value
+                        if (current is ViewerUiState.Success) {
+                            _uiState.value = current.copy(
+                                isSearching = false,
+                                canCancelSearch = false,
+                                searchNotice = "검색 중 오류가 발생했습니다: ${outcome.message}",
+                            )
+                        }
+                    }
+                }
+            } catch (_: kotlinx.coroutines.CancellationException) {
                 val current = _uiState.value
                 if (current is ViewerUiState.Success) {
-                    val notice = if (results.isEmpty()) {
-                        "No results. PdfRenderer cannot extract text; search engine is scaffold-only for now."
-                    } else {
-                        null
-                    }
                     _uiState.value = current.copy(
                         isSearching = false,
-                        searchNotice = notice,
-                        searchResults = results.map {
-                            SearchResultUi(pageIndex = it.pageIndex, summary = it.summary)
-                        },
+                        canCancelSearch = false,
+                        searchNotice = "검색이 취소되었습니다.",
                     )
                 }
             } catch (e: Exception) {
@@ -182,15 +256,54 @@ class ViewerViewModel(
                 if (current is ViewerUiState.Success) {
                     _uiState.value = current.copy(
                         isSearching = false,
-                        searchNotice = "Search failed: ${e.localizedMessage}",
+                        canCancelSearch = false,
+                        searchNotice = "검색 실패: ${e.localizedMessage ?: "알 수 없는 오류"}",
                     )
                 }
             }
         }
     }
 
+    fun cancelSearch() {
+        searchJob?.cancel()
+        searchJob = null
+    }
+
+    fun openPreviousSearchResult() {
+        val state = _uiState.value
+        if (state !is ViewerUiState.Success || state.searchResults.isEmpty()) return
+
+        val current = if (state.selectedSearchResultIndex in state.searchResults.indices) {
+            state.selectedSearchResultIndex
+        } else {
+            0
+        }
+        val previous = if (current <= 0) state.searchResults.lastIndex else current - 1
+        openSearchResultByIndex(previous)
+    }
+
+    fun openNextSearchResult() {
+        val state = _uiState.value
+        if (state !is ViewerUiState.Success || state.searchResults.isEmpty()) return
+
+        val current = if (state.selectedSearchResultIndex in state.searchResults.indices) {
+            state.selectedSearchResultIndex
+        } else {
+            -1
+        }
+        val next = if (current >= state.searchResults.lastIndex) 0 else current + 1
+        openSearchResultByIndex(next)
+    }
+
     fun openSearchResult(pageIndex: Int) {
-        setCurrentPage(pageIndex)
+        val state = _uiState.value
+        if (state !is ViewerUiState.Success) return
+        val index = state.searchResults.indexOfFirst { it.pageIndex == pageIndex }
+        if (index >= 0) {
+            openSearchResultByIndex(index)
+        } else {
+            setCurrentPage(pageIndex)
+        }
     }
 
     fun openThumbnailPage(pageIndex: Int) {
@@ -313,6 +426,29 @@ class ViewerViewModel(
         }
     }
 
+    private fun openSearchResultByIndex(resultIndex: Int) {
+        val state = _uiState.value
+        if (state !is ViewerUiState.Success) return
+        if (resultIndex !in state.searchResults.indices) return
+
+        val pageIndex = state.searchResults[resultIndex].pageIndex
+        val targetPage = pageIndex.coerceIn(0, (state.pageCount - 1).coerceAtLeast(0))
+        _uiState.value = state.copy(selectedSearchResultIndex = resultIndex)
+        try {
+            setCurrentPage(targetPage)
+        } catch (_: Exception) {
+            val current = _uiState.value
+            if (current is ViewerUiState.Success) {
+                _uiState.value = current.copy(searchNotice = "검색 결과 페이지 이동에 실패했습니다.")
+            }
+        }
+    }
+
+    private fun clearSearchState() {
+        searchJob?.cancel()
+        searchJob = null
+    }
+
     private suspend fun persistReadingProgress(uri: String, page: Int) {
         readingProgressRepository.saveProgress(
             ReadingProgress(
@@ -337,6 +473,7 @@ class ViewerViewModel(
     override fun onCleared() {
         super.onCleared()
         bookmarkObserveJob?.cancel()
+        clearSearchState()
 
         viewModelScope.launch(dispatcherProvider.io) {
             currentSession?.let {

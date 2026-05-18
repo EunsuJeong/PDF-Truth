@@ -10,6 +10,7 @@ data class ThumbnailUi(
 data class SearchResultUi(
     val pageIndex: Int,
     val summary: String,
+    val matchCount: Int = 0,
 )
 
 sealed class ViewerUiState {
@@ -24,7 +25,9 @@ sealed class ViewerUiState {
         val bookmarkedPages: Set<Int> = emptySet(),
         val searchQuery: String = "",
         val searchResults: List<SearchResultUi> = emptyList(),
+        val selectedSearchResultIndex: Int = -1,
         val isSearching: Boolean = false,
+        val canCancelSearch: Boolean = false,
         val searchNotice: String? = null,
         val showThumbnails: Boolean = false,
         val thumbnails: List<ThumbnailUi> = emptyList(),
