@@ -1,0 +1,1 @@
+Room schema JSON files will be generated here during local builds.
