@@ -1,6 +1,7 @@
 package com.pdftruth.viewmodel
 
 import android.graphics.Bitmap
+import com.pdftruth.domain.model.SearchHighlightRange
 
 data class ThumbnailUi(
     val pageIndex: Int,
@@ -10,6 +11,8 @@ data class ThumbnailUi(
 data class SearchResultUi(
     val pageIndex: Int,
     val summary: String,
+    val highlightRanges: List<SearchHighlightRange> = emptyList(),
+    val matchCount: Int = 0,
 )
 
 sealed class ViewerUiState {

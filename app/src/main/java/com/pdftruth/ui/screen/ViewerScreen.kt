@@ -31,6 +31,13 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.pointer.pointerInput
 import com.pdftruth.ui.gesture.pinchToZoom
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
+import kotlinx.coroutines.launch
 
 @Composable
 fun ViewerScreen(
@@ -173,7 +180,17 @@ fun ViewerScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text("p${item.pageIndex + 1}: ${item.summary}")
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "p${item.pageIndex + 1}  matches:${item.matchCount}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                            )
+                                            Text(
+                                                text = highlightSummary(item.summary, item.highlightRanges),
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
                                         Button(onClick = {
                                             onSearchResultClick(item.pageIndex)
                                             coroutineScope.launch {
@@ -306,6 +323,39 @@ fun ViewerScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+private fun highlightSummary(
+    summary: String,
+    ranges: List<com.pdftruth.domain.model.SearchHighlightRange>,
+): AnnotatedString {
+    if (ranges.isEmpty()) return AnnotatedString(summary)
+
+    val safeRanges = ranges
+        .filter { it.start in 0 until summary.length && it.endExclusive in 1..summary.length && it.start < it.endExclusive }
+        .sortedBy { it.start }
+
+    if (safeRanges.isEmpty()) return AnnotatedString(summary)
+
+    return buildAnnotatedString {
+        var cursor = 0
+        for (range in safeRanges) {
+            if (range.start > cursor) {
+                append(summary.substring(cursor, range.start))
+            }
+
+            withStyle(
+                style = SpanStyle(fontWeight = FontWeight.SemiBold)
+            ) {
+                append(summary.substring(range.start, range.endExclusive))
+            }
+            cursor = range.endExclusive
+        }
+
+        if (cursor < summary.length) {
+            append(summary.substring(cursor))
         }
     }
 }
