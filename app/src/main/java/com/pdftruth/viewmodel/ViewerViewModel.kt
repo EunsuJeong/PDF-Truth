@@ -49,6 +49,8 @@ class ViewerViewModel(
     private val bitmapCache = PageBitmapLruCache(5)
     private val thumbnailCache = ThumbnailBitmapLruCache(20)
     private var bookmarkObserveJob: Job? = null
+    private var isLoadingPage: Boolean = false
+    private var pendingPageRequest: Int? = null
 
     fun openPdf(uri: Uri?) {
         if (uri == null) {
@@ -98,21 +100,74 @@ class ViewerViewModel(
     }
 
     fun setCurrentPage(page: Int) {
+        goToPage(page)
+    }
+
+    fun goToPreviousPage() {
+        val state = _uiState.value
+        if (state !is ViewerUiState.Success) return
+        if (state.currentPage <= 0) return
+        goToPage(state.currentPage - 1)
+    }
+
+    fun goToNextPage() {
+        val state = _uiState.value
+        if (state !is ViewerUiState.Success) return
+        if (state.currentPage >= state.pageCount - 1) return
+        goToPage(state.currentPage + 1)
+    }
+
+    fun goToPage(pageIndex: Int) {
         val state = _uiState.value
         if (state !is ViewerUiState.Success) return
 
-        val target = page.coerceIn(0, (state.pageCount - 1).coerceAtLeast(0))
+        val maxIndex = (state.pageCount - 1).coerceAtLeast(0)
+        val target = pageIndex.coerceIn(0, maxIndex)
         if (target == state.currentPage) return
 
+        if (isLoadingPage) {
+            pendingPageRequest = target
+            return
+        }
+
+        isLoadingPage = true
         _uiState.value = state.copy(currentPage = target)
 
-        val uri = state.documentUri ?: return
+        val uri = state.documentUri
         viewModelScope.launch(dispatcherProvider.io) {
-            persistReadingProgress(uri, target)
-            persistRecentDocument(uri)
-            prefetchAround(target)
-            prefetchThumbnailsAround(target)
+            try {
+                renderCurrentPage(target, state.pageCount)
+                if (uri != null) {
+                    persistReadingProgress(uri, target)
+                    persistRecentDocument(uri)
+                }
+                prefetchAround(target)
+                prefetchThumbnailsAround(target)
+            } catch (e: Exception) {
+                val current = _uiState.value
+                if (current is ViewerUiState.Success) {
+                    pageStates[target] = PageUiState.Error(
+                        "페이지 이동 실패: ${e.localizedMessage ?: "unknown"}",
+                    )
+                    publish(current.pageCount)
+                }
+            } finally {
+                isLoadingPage = false
+                val pending = pendingPageRequest
+                if (pending != null && pending != target) {
+                    pendingPageRequest = null
+                    goToPage(pending)
+                } else {
+                    pendingPageRequest = null
+                }
+            }
         }
+    }
+
+    private suspend fun renderCurrentPage(pageIndex: Int, pageCount: Int) {
+        if (pageIndex !in 0 until pageCount) return
+        val session = currentSession ?: return
+        renderPageIfNeeded(pageIndex, pageCount, session)
     }
 
     fun toggleThumbnails() {
