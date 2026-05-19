@@ -99,13 +99,8 @@ fun AppNavGraph(
             ViewerScreen(
                 uiState = uiState,
                 onNavigateUp = { navController.popBackStack() },
-                onCurrentPageChanged = viewModel::setCurrentPage,
-                onToggleBookmark = viewModel::toggleCurrentPageBookmark,
-                onSearchQueryChanged = viewModel::updateSearchQuery,
-                onSearchExecute = viewModel::executeSearch,
-                onSearchResultClick = viewModel::openSearchResult,
-                onToggleThumbnails = viewModel::toggleThumbnails,
-                onThumbnailClick = viewModel::openThumbnailPage,
+                onPreviousPage = viewModel::goToPreviousPage,
+                onNextPage = viewModel::goToNextPage,
                 pdfUri = uri,
             )
         }

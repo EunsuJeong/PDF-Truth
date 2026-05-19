@@ -17,7 +17,11 @@ sealed class ViewerUiState {
     object Loading : ViewerUiState()
     data class Success(
         val pageCount: Int,
+        val totalPages: Int = pageCount,
         val pages: List<PageUiState>,
+        val currentPageBitmap: Bitmap? = null,
+        val isLoadingPage: Boolean = false,
+        val errorMessage: String? = null,
         val fileName: String? = null,
         val documentUri: String? = null,
         val currentPage: Int = 0,
