@@ -3,6 +3,7 @@ package com.pdftruth.viewmodel
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import java.lang.SecurityException
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pdftruth.domain.model.ReadingProgress
@@ -91,6 +92,10 @@ class ViewerViewModel(
                 observeBookmarks(uriString)
                 prefetchAround(restoredPage)
                 prefetchThumbnailsAround(restoredPage)
+            } catch (e: SecurityException) {
+                _uiState.value = ViewerUiState.Error(
+                    "Failed to open PDF: Permission Denial. PDF 파일 권한이 만료되었습니다. 메인 화면에서 파일을 다시 선택해 주세요.",
+                )
             } catch (e: Exception) {
                 _uiState.value = ViewerUiState.Error("Failed to open PDF: ${e.localizedMessage}")
             }
