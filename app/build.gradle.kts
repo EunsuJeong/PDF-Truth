@@ -56,6 +56,21 @@ android {
     }
 }
 
+tasks.matching { it.name == "assembleDebug" }.configureEach {
+    doLast {
+        val debugDir = layout.buildDirectory.dir("outputs/apk/debug").get().asFile
+        val defaultApk = debugDir.resolve("app-debug.apk")
+        val fixedNameApk = debugDir.resolve("260518_01.apk")
+
+        if (defaultApk.exists()) {
+            if (fixedNameApk.exists()) {
+                fixedNameApk.delete()
+            }
+            defaultApk.renameTo(fixedNameApk)
+        }
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
