@@ -25,12 +25,16 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.*
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
-import com.pdftruth.ui.gesture.pinchToZoom
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.IntSize
+import kotlinx.coroutines.launch
 
 @Composable
 fun ViewerScreen(
@@ -73,15 +77,32 @@ fun ViewerScreen(
                     val currentPage = uiState.currentPage
                     val isCurrentBookmarked = uiState.bookmarkedPages.contains(currentPage)
                     val coroutineScope = rememberCoroutineScope()
-                    // 확대/축소 상태 (전체/페이지별 확장 가능)
                     var scale by remember { mutableStateOf(1f) }
+                    var offset by remember { mutableStateOf(Offset.Zero) }
+                    var contentSize by remember { mutableStateOf(IntSize.Zero) }
                     val minScale = 1f
                     val maxScale = 5f
+
+                    fun clampOffset(raw: Offset, targetScale: Float): Offset {
+                        if (targetScale <= 1f || contentSize == IntSize.Zero) {
+                            return Offset.Zero
+                        }
+                        val maxX = (contentSize.width * (targetScale - 1f) / 2f).coerceAtLeast(0f)
+                        val maxY = (contentSize.height * (targetScale - 1f) / 2f).coerceAtLeast(0f)
+                        return Offset(
+                            x = raw.x.coerceIn(-maxX, maxX),
+                            y = raw.y.coerceIn(-maxY, maxY),
+                        )
+                    }
                     // LazyListState와 ViewModel currentPage 동기화
                     LaunchedEffect(listState.firstVisibleItemIndex) {
                         if (listState.firstVisibleItemIndex != currentPage) {
                             onCurrentPageChanged(listState.firstVisibleItemIndex)
                         }
+                    }
+                    LaunchedEffect(currentPage) {
+                        scale = 1f
+                        offset = Offset.Zero
                     }
                     Column(
                         modifier = Modifier.fillMaxSize(),
@@ -211,20 +232,52 @@ fun ViewerScreen(
                                                 modifier = Modifier
                                                     .fillMaxWidth(0.9f)
                                                     .aspectRatio(0.707f)
-                                                    .scale(scale)
                                                     .pointerInput(scale) {
                                                         detectTapGestures(
                                                             onDoubleTap = {
                                                                 scale = if (scale <= 1f) 2f else 1f
+                                                                if (scale <= 1f) {
+                                                                    offset = Offset.Zero
+                                                                }
                                                             }
                                                         )
                                                     }
-                                                    .pinchToZoom(
-                                                        scale = scale,
-                                                        onScaleChange = { scale = it },
-                                                        minScale = minScale,
-                                                        maxScale = maxScale
-                                                    )
+                                                    .onSizeChanged { contentSize = it }
+                                                    .graphicsLayer {
+                                                        scaleX = scale
+                                                        scaleY = scale
+                                                        translationX = offset.x
+                                                        translationY = offset.y
+                                                    }
+                                                    .pointerInput(contentSize, scale) {
+                                                        detectTransformGestures(
+                                                            panZoomLock = false,
+                                                        ) { centroid, pan, zoom, _ ->
+                                                            val oldScale = scale
+                                                            val newScale = (oldScale * zoom).coerceIn(minScale, maxScale)
+                                                            val scaleRatio = if (oldScale == 0f) 1f else newScale / oldScale
+                                                            val containerCenter = Offset(
+                                                                x = contentSize.width / 2f,
+                                                                y = contentSize.height / 2f,
+                                                            )
+                                                            val focusFromCenter = centroid - containerCenter
+
+                                                            val correctedOffset = if (newScale <= 1f) {
+                                                                Offset.Zero
+                                                            } else {
+                                                                val zoomAligned =
+                                                                    (offset - focusFromCenter) * scaleRatio + focusFromCenter
+                                                                clampOffset(zoomAligned + pan, newScale)
+                                                            }
+
+                                                            scale = newScale
+                                                            offset = if (newScale <= 1f) {
+                                                                Offset.Zero
+                                                            } else {
+                                                                correctedOffset
+                                                            }
+                                                        }
+                                                    }
                                             )
                                         }
                                         is PageUiState.Error -> {
