@@ -49,6 +49,7 @@ class ViewerViewModel(
     private val bitmapCache = PageBitmapLruCache(5)
     private val thumbnailCache = ThumbnailBitmapLruCache(20)
     private var bookmarkObserveJob: Job? = null
+    private var isLoadingPage = false
 
     fun openPdf(uri: Uri?) {
         if (uri == null) {
@@ -104,14 +105,27 @@ class ViewerViewModel(
         val target = page.coerceIn(0, (state.pageCount - 1).coerceAtLeast(0))
         if (target == state.currentPage) return
 
+        if (isLoadingPage) {
+            // 중복 호출 방지
+            return
+        }
+
+        isLoadingPage = true
+        println("[DEBUG] setCurrentPage: target=$target, currentPage=${state.currentPage}")
         _uiState.value = state.copy(currentPage = target)
 
         val uri = state.documentUri ?: return
         viewModelScope.launch(dispatcherProvider.io) {
-            persistReadingProgress(uri, target)
-            persistRecentDocument(uri)
-            prefetchAround(target)
-            prefetchThumbnailsAround(target)
+            try {
+                println("[DEBUG] Persisting reading progress for page $target")
+                persistReadingProgress(uri, target)
+                persistRecentDocument(uri)
+                prefetchAround(target)
+                prefetchThumbnailsAround(target)
+            } finally {
+                isLoadingPage = false // 고착 방지
+                println("[DEBUG] isLoadingPage reset")
+            }
         }
     }
 

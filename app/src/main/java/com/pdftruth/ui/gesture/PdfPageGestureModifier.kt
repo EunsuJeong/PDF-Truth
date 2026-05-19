@@ -101,6 +101,7 @@ fun Modifier.pdfPageGestureModifier(
                 }
             }
 
-            handledScale || handledGesture
+            // 이벤트 consume 문제 해결
+            handledScale || handledGesture || event.actionMasked == MotionEvent.ACTION_DOWN
         }
 }

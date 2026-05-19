@@ -110,7 +110,8 @@ fun ViewerScreen(
                         return Offset(clampedX, clampedY)
                     }
 
-                    LaunchedEffect(currentPage) {
+                    LaunchedEffect(currentPage, scale) {
+                        println("[DEBUG] LaunchedEffect triggered: currentPage=$currentPage, scale=$scale")
                         resetTransform()
                     }
 
