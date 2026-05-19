@@ -1,3 +1,6 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -53,6 +56,33 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+}
+
+tasks.matching { it.name == "assembleDebug" || it.name == "assembleRelease" }.configureEach {
+    doLast {
+        val variant = name.removePrefix("assemble").lowercase()
+        val outputDir = layout.buildDirectory.dir("outputs/apk/$variant").get().asFile
+        val defaultCandidates = listOf(
+            outputDir.resolve("app-$variant.apk"),
+            outputDir.resolve("app-$variant-unsigned.apk"),
+        )
+        val defaultApk = defaultCandidates.firstOrNull { it.exists() } ?: return@doLast
+
+        val today = SimpleDateFormat("yyMMdd").format(Date())
+        val prefix = "PDF_${today}_"
+        val existing = outputDir.listFiles().orEmpty()
+            .map { it.name }
+            .filter { it.startsWith(prefix) && it.endsWith(".apk") }
+            .mapNotNull { it.removePrefix(prefix).removeSuffix(".apk").toIntOrNull() }
+
+        val nextNumber = ((existing.maxOrNull() ?: 0) + 1).coerceAtMost(99)
+        val targetName = "${prefix}${"%02d".format(nextNumber)}.apk"
+        val targetApk = outputDir.resolve(targetName)
+        if (targetApk.exists()) {
+            targetApk.delete()
+        }
+        defaultApk.renameTo(targetApk)
     }
 }
 
