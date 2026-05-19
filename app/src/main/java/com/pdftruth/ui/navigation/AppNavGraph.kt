@@ -28,6 +28,28 @@ fun AppNavGraph(
 ) {
     val container = AppContainer.getInstance(navController.context)
 
+    fun ensureReadPermission(uri: Uri) {
+        val resolver = navController.context.contentResolver
+        val persisted = resolver.persistedUriPermissions.any { permission ->
+            permission.uri == uri && permission.isReadPermission
+        }
+        if (persisted) return
+
+        try {
+            resolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        } catch (_: SecurityException) {
+            try {
+                resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: SecurityException) {
+                // 최근 문서는 persistable flag가 없을 수 있어 여기서는 예외를 삼키고
+                // 실제 open 시점에서 에러 상태로 사용자에게 안내한다.
+            }
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = AppRoute.Main.route,
@@ -50,13 +72,11 @@ fun AppNavGraph(
                 uiState = uiState,
                 onPdfPicked = { uri ->
                     // SAF 권한 유지
-                    navController.context.contentResolver.takePersistableUriPermission(
-                        uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
+                    ensureReadPermission(uri)
                     navController.navigate(AppRoute.Viewer.route + "?uri=" + Uri.encode(uri.toString()))
                 },
                 onRecentDocumentClicked = { uri ->
+                    ensureReadPermission(uri)
                     navController.navigate(AppRoute.Viewer.route + "?uri=" + Uri.encode(uri.toString()))
                 },
             )
