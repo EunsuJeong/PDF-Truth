@@ -115,6 +115,20 @@ class ViewerViewModel(
         }
     }
 
+    fun goToPreviousPage() {
+        val state = _uiState.value
+        if (state !is ViewerUiState.Success) return
+        if (state.currentPage <= 0) return
+        setCurrentPage(state.currentPage - 1)
+    }
+
+    fun goToNextPage() {
+        val state = _uiState.value
+        if (state !is ViewerUiState.Success) return
+        if (state.currentPage >= state.pageCount - 1) return
+        setCurrentPage(state.currentPage + 1)
+    }
+
     fun toggleThumbnails() {
         val state = _uiState.value
         if (state is ViewerUiState.Success) {

@@ -100,6 +100,8 @@ fun AppNavGraph(
                 uiState = uiState,
                 onNavigateUp = { navController.popBackStack() },
                 onCurrentPageChanged = viewModel::setCurrentPage,
+                onPreviousPage = viewModel::goToPreviousPage,
+                onNextPage = viewModel::goToNextPage,
                 onToggleBookmark = viewModel::toggleCurrentPageBookmark,
                 onSearchQueryChanged = viewModel::updateSearchQuery,
                 onSearchExecute = viewModel::executeSearch,
