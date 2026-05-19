@@ -77,6 +77,7 @@ class ViewerViewModel(
 
                 _uiState.value = ViewerUiState.Success(
                     pageCount = pageCount,
+                    totalPages = pageCount,
                     pages = pageStates.toList(),
                     fileName = document.displayName,
                     documentUri = uriString,
@@ -89,6 +90,7 @@ class ViewerViewModel(
                 persistRecentDocument(uriString)
                 persistReadingProgress(uriString, restoredPage)
                 observeBookmarks(uriString)
+                renderCurrentPage()
                 prefetchAround(restoredPage)
                 prefetchThumbnailsAround(restoredPage)
             } catch (e: Exception) {
@@ -105,6 +107,7 @@ class ViewerViewModel(
         if (target == state.currentPage) return
 
         _uiState.value = state.copy(currentPage = target)
+        renderCurrentPage()
 
         val uri = state.documentUri ?: return
         viewModelScope.launch(dispatcherProvider.io) {
@@ -112,6 +115,60 @@ class ViewerViewModel(
             persistRecentDocument(uri)
             prefetchAround(target)
             prefetchThumbnailsAround(target)
+        }
+    }
+
+    fun goToPreviousPage() {
+        val state = _uiState.value
+        if (state is ViewerUiState.Success && state.currentPage > 0) {
+            goToPage(state.currentPage - 1)
+        }
+    }
+
+    fun goToNextPage() {
+        val state = _uiState.value
+        if (state is ViewerUiState.Success && state.currentPage < state.pageCount - 1) {
+            goToPage(state.currentPage + 1)
+        }
+    }
+
+    fun goToPage(pageIndex: Int) {
+        setCurrentPage(pageIndex)
+    }
+
+    fun renderCurrentPage() {
+        val state = _uiState.value
+        if (state !is ViewerUiState.Success) return
+
+        val currentPage = state.currentPage
+        val session = currentSession ?: return
+
+        _uiState.value = state.copy(isLoadingPage = true, errorMessage = null)
+
+        viewModelScope.launch(dispatcherProvider.io) {
+            try {
+                val bitmap = engine?.renderPage(
+                    session,
+                    PageRenderRequest(pageIndex = currentPage, width = 1080, height = 1440),
+                )?.bitmap
+
+                val latest = _uiState.value
+                if (latest is ViewerUiState.Success) {
+                    _uiState.value = latest.copy(
+                        currentPageBitmap = bitmap,
+                        isLoadingPage = false,
+                        errorMessage = if (bitmap == null) "페이지 렌더링에 실패했습니다." else null,
+                    )
+                }
+            } catch (e: Exception) {
+                val latest = _uiState.value
+                if (latest is ViewerUiState.Success) {
+                    _uiState.value = latest.copy(
+                        isLoadingPage = false,
+                        errorMessage = "Failed to render page: ${e.localizedMessage}",
+                    )
+                }
+            }
         }
     }
 
@@ -274,6 +331,7 @@ class ViewerViewModel(
         if (state is ViewerUiState.Success) {
             _uiState.value = state.copy(
                 pageCount = pageCount,
+                totalPages = pageCount,
                 pages = pageStates.toList(),
             )
         }
@@ -287,6 +345,7 @@ class ViewerViewModel(
                 updated[index] = updated[index].copy(bitmap = bitmap)
                 _uiState.value = state.copy(
                     pageCount = pageCount,
+                    totalPages = pageCount,
                     thumbnails = updated,
                 )
             }
