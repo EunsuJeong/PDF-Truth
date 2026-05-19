@@ -56,17 +56,27 @@ android {
     }
 }
 
-tasks.matching { it.name == "assembleDebug" }.configureEach {
+tasks.matching { it.name.startsWith("assemble") }.configureEach {
     doLast {
-        val debugDir = layout.buildDirectory.dir("outputs/apk/debug").get().asFile
-        val defaultApk = debugDir.resolve("app-debug.apk")
-        val fixedNameApk = debugDir.resolve("PDF_260518_01.apk")
+        val buildType = name.removePrefix("assemble").lowercase()
+        val outputDir = layout.buildDirectory.dir("outputs/apk/$buildType").get().asFile
+        val defaultApk = outputDir.resolve("app-$buildType.apk")
 
         if (defaultApk.exists()) {
-            if (fixedNameApk.exists()) {
-                fixedNameApk.delete()
-            }
-            defaultApk.renameTo(fixedNameApk)
+            val date = "260519" // 임시로 고정된 날짜 사용
+            val baseName = "PDF_${date}_"
+
+            // Find the next available number
+            val existingFiles = outputDir.listFiles()?.filter { it.name.startsWith(baseName) } ?: emptyList()
+            val nextNumber = (existingFiles.mapNotNull {
+                it.name.removePrefix(baseName).removeSuffix(".apk").toIntOrNull()
+            }.maxOrNull() ?: 0) + 1
+
+            val newApkName = "$baseName${"%02d".format(nextNumber)}.apk"
+            val newApk = outputDir.resolve(newApkName)
+
+            defaultApk.renameTo(newApk)
+            println("APK renamed to: ${newApk.name}")
         }
     }
 }
